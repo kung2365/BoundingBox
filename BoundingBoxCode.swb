@@ -1,6 +1,9 @@
 
-' **********************************************************************
-' * This macro gets the bounding box dimensions for the config specific
+'Â **********************************************************************
+' ************************** MIT License *******************************
+
+
+'Â * This macro gets the bounding box dimensions for the config specific
 ' * model and adds a small amount to it.  This amount can be changed
 ' * by modifying the "AddFactor" value below.  It checks to make sure
 ' * you have a proper document open.  It checks & utilizes the user units.
@@ -12,8 +15,8 @@
 ' *
 ' * Original few lines of demo code by someone else (unknown).  Fraction
 ' * converter original code from rocheey.  3D sketch original code from
-' * SW help.
-' **********************************************************************
+'Â * SW help.
+'Â **********************************************************************
 
 Dim swApp As SldWorks.SldWorks
 Dim swModel As SldWorks.ModelDoc2
