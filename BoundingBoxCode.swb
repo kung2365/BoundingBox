@@ -1,0 +1,313 @@
+
+' **********************************************************************
+' * This macro gets the bounding box dimensions for the config specific
+' * model and adds a small amount to it.  This amount can be changed
+' * by modifying the "AddFactor" value below.  It checks to make sure
+' * you have a proper document open.  It checks & utilizes the user units.
+' * It will add 3 separate properties or combine them all into one property.
+' * It will optionally draw a 3D sketch for you.
+' *
+' * Modified by Wayne Tiffany, Oct 12, 2004
+' * Updated 10/15/04
+' *
+' * Original few lines of demo code by someone else (unknown).  Fraction
+' * converter original code from rocheey.  3D sketch original code from
+' * SW help.
+' **********************************************************************
+
+Dim swApp As SldWorks.SldWorks
+Dim swModel As SldWorks.ModelDoc2
+Dim swCustPropMgr As SldWorks.CustomPropertyManager
+Dim bound As String
+
+
+Dim Part As SldWorks.ModelDoc2
+Dim Height As Variant
+Dim Width As Variant
+Dim Length As Variant
+Dim Corners As Variant
+Dim retVal As Boolean
+Dim UserUnits As Variant
+Dim ConvFactor As Double
+Dim AddFactor As Double
+Dim ConfigName  As String
+Dim SwConfig As SldWorks.Configuration
+Dim MsgResponse As Integer
+Dim swSketchPt(8) As SldWorks.SketchPoint
+Dim swSketchSeg(12) As SldWorks.SketchSegment
+
+'get material *************************
+
+'Dim swPart5 As SldWorks.PartDoc
+'Dim sMatName As String
+'Dim sMatDB As String
+Dim kMat As String
+
+'get material *************************
+
+
+'make step file ********************
+
+Dim SelMgr As Object
+Dim boolstatus As Boolean
+Dim longstatus As Long, longwarnings As Long
+Dim Feature As Object
+Dim Step As Long
+
+'make step file ********************
+
+Const swDocPart = 1
+Const swDocASSEMBLY = 2
+
+ 'Enum swLengthUnit_e
+Const swMM = 0
+Const swCM = 1
+Const swMETER = 2
+Const swINCHES = 3
+Const swFEET = 4
+Const swFEETINCHES = 5
+Const swANGSTROM = 6
+Const swNANOMETER = 7
+Const swMICRON = 8
+Const swMIL = 9
+Const swUIN = 10
+
+'Enum swFractionDisplay_e
+Const swNONE = 0
+Const swDECIMAL = 1
+Const swFRACTION = 2
+
+
+Dim bRet                As Boolean
+
+Function DecimalToFeetInches(DecimalLength As Variant, Denominator As Integer) As String
+  ' converts decimal inches to feet/inches/fractions
+      
+  Dim intFeet As Integer
+  Dim intInches As Integer
+  Dim intFractions As Integer
+  Dim FractToDecimal As Double
+  Dim remainder As Double
+  Dim tmpVal As Double
+   
+  ' compute whole feet
+  intFeet = Int(DecimalLength / 12)
+  remainder = DecimalLength - (intFeet * 12)
+  tmpVal = CDbl(Denominator)
+
+  ' compute whole inches
+  intInches = Int(remainder)
+  remainder = remainder - intInches
+   
+  ' compute fractional inches & check for division by zero
+  If Not (remainder = 0) Then
+    If Not (Denominator = 0) Then
+      FractToDecimal = 1 / tmpVal
+        If FractToDecimal > 0 Then
+          intFractions = Int(remainder / FractToDecimal)
+          If (remainder / FractToDecimal) - intFractions > 0 Then  ' Round up so bounding box is always larger.
+            intFractions = intFractions + 1
+          End If
+        End If
+     End If
+  End If
+      'Debug.Print "Feet = " & intFeet & ", Inches = " & intInches & ", Numerator = " & intFractions & ", Denominator = " & FractToDecimal
+  Call FractUp(intFeet, intInches, intFractions, Denominator) ' Simplify up & down
+  
+  ' format output
+  DecimalToFeetInches = LTrim$(Str$(intFeet)) & "'-"
+  DecimalToFeetInches = DecimalToFeetInches & LTrim$(Str$(intInches))
+  If intFractions > 0 Then
+    DecimalToFeetInches = DecimalToFeetInches & " "
+    DecimalToFeetInches = DecimalToFeetInches & LTrim$(Str$(intFractions))
+    DecimalToFeetInches = DecimalToFeetInches & "\" & LTrim$(Str$(Denominator))
+  End If
+    
+  DecimalToFeetInches = DecimalToFeetInches & Chr$(34)
+      'Debug.Print DecimalToFeetInches
+
+End Function
+
+Function FractUp(InputFt As Integer, InputInch As Integer, InputNum As Integer, InputDenom As Integer)
+    
+       'Debug.Print InputFt, InputInch, InputNum, InputDenom
+  
+  ' Simplify the fractions, Example: 6/8" becomes 3/4"
+  While InputNum Mod 2 = 0 And InputDenom Mod 2 = 0
+    InputNum = InputNum / 2
+    InputDenom = InputDenom / 2
+  Wend
+  
+  ' See if we now have a full inch or 12 inches.  If so, bump stuff up
+  If InputDenom = 1 Then  ' Full inch
+    InputInch = InputInch + 1
+    InputNum = 0
+    If InputInch = 12 Then  ' Full foot
+      InputFt = InputFt + 1
+      InputInch = 0
+    End If
+  End If
+       'Debug.Print InputFt, InputInch, InputNum, InputDenom
+        
+End Function
+
+Function GetCurrentConfigName()
+  
+  Set SwConfig = Part.GetActiveConfiguration  ' See what config we are now on & set the variable
+  GetCurrentConfigName = Part.GetActiveConfiguration.name  ' Return the name
+
+End Function
+
+
+Sub main()
+
+AddFactor = 0  ' This is the amount added - change to suit
+
+Set swApp = Application.SldWorks
+Set Part = swApp.ActiveDoc
+
+If Part Is Nothing Then                    ' Did we get anything?
+  MsgBox "You need to have a part or assy open at this point." & Chr$(13) & Chr$(10) _
+          & Chr$(10) & "Open one and try again."
+  Exit Sub
+End If
+
+If (Part.GetType = swDocPart) Then
+  Corners = Part.GetPartBox(True)         ' True comes back as system units - meters
+ElseIf Part.GetType = swDocASSEMBLY Then  ' Units will come back as meters
+  Corners = Part.GetBox(0)
+Else
+  MsgBox "This macro is only useful with a part or assy." & Chr$(13) & Chr$(10) & "Open one of those and try again."
+  Exit Sub
+End If
+
+UserUnits = Part.GetUnits()
+  'Debug.Print "LengthUnit = " & UserUnits(0)
+  'Debug.Print "Fraction Base = " & UserUnits(1)
+  'Debug.Print "FractionDenominator = " & UserUnits(2)
+  'Debug.Print "SignificantDigits = " & UserUnits(3)
+  'Debug.Print "RoundToFraction = " & UserUnits(4)
+  
+Select Case Part.GetUnits(0)
+  Case swMM
+    ConvFactor = 1 * 1000
+  Case swCM
+    ConvFactor = 1 * 100
+  Case swMETER
+    ConvFactor = 1
+  Case swINCHES
+    ConvFactor = 1 / 0.0254
+  Case swFEET
+    ConvFactor = 1 / (0.0254 * 12)
+  Case swFEETINCHES
+    ConvFactor = 1 / 0.0254  ' Pass inches through
+  Case swANGSTROM
+    ConvFactor = 10000000000#
+  Case swNANOMETER
+    ConvFactor = 1000000000
+  Case swMICRON
+    ConvFactor = 1000000
+  Case swMIL
+    ConvFactor = (1 / 0.0254) * 1000
+  Case swUIN
+    ConvFactor = (1 / 0.0254) * 1000000
+End Select
+
+Height = Round((Abs(Corners(4) - Corners(1)) * ConvFactor) + AddFactor, UserUnits(3)) ' Z axis
+Width = Round((Abs(Corners(5) - Corners(2)) * ConvFactor) + AddFactor, UserUnits(3))  ' Y axis
+Length = Round((Abs(Corners(3) - Corners(0)) * ConvFactor) + AddFactor, UserUnits(3)) ' X axis
+    'Debug.Print Height & " x " & Width & " x " & Length
+
+' Check for either (Feet-Inches OR Inches) AND fractions.  If so, return Ft-In
+If (UserUnits(0) = 5 Or UserUnits(0) = 3) And UserUnits(1) = 2 Then
+  Height = DecimalToFeetInches(Height, Val(UserUnits(2)))
+  Width = DecimalToFeetInches(Width, Val(UserUnits(2)))
+  Length = DecimalToFeetInches(Length, Val(UserUnits(2)))
+End If
+    'Debug.Print Height & " x " & Width & " x " & Length
+
+ConfigName = GetCurrentConfigName() ' See what config we are now on
+
+MsgBoxMsg = "The default for this program is to combine the 3 values into one property." & Chr$(13) & Chr$(10) _
+        & "Do you want to keep it this way?" & Chr$(13) & Chr$(10) _
+        & Chr$(10) & "(Clicking the No button will add 3 separate properties.)"
+
+'MsgResponse = MsgBox(MsgBoxMsg, vbInformation + vbYesNoCancel)
+MsgResponse = vbYes
+
+If MsgResponse = vbYes Then  ' One property
+  retVal = Part.DeleteCustomInfo2(ConfigName, "BoundingSize") 'Remove existing properties
+  retVal = Part.AddCustomInfo3(ConfigName, "BoundingSize", swCustomInfoText, _
+           Height & " x " & Width & " x " & Length)  'Add latest values
+ElseIf MsgResponse = vbNo Then  ' 3 properties
+  'Remove existing properties
+  retVal = Part.DeleteCustomInfo2(ConfigName, "Height")
+  retVal = Part.DeleteCustomInfo2(ConfigName, "Width")
+  retVal = Part.DeleteCustomInfo2(ConfigName, "Length")
+  'Add latest values
+  retVal = Part.AddCustomInfo3(ConfigName, "Height", swCustomInfoNumber, Height)
+  retVal = Part.AddCustomInfo3(ConfigName, "Width", swCustomInfoNumber, Width)
+  retVal = Part.AddCustomInfo3(ConfigName, "Length", swCustomInfoNumber, Length)
+Else
+  Exit Sub
+End If
+
+MsgBoxMsg = "Do you want to draw a 3D sketch that represents the bounding box?" & Chr$(13) & Chr$(10) _
+        & "This is a good way to visualize the dimensions."
+
+
+'MsgResponse = MsgBox(MsgBoxMsg, vbInformation + vbYesNo)
+Set swModel = swApp.ActiveDoc
+
+Set swCustPropMgr = swModel.Extension.CustomPropertyManager("")
+
+
+bound = Str(Height) + "mm.x" + Str(Width) + "mm.x" + Str(Length) + "mm."
+swCustPropMgr.Add2 "Author", swCustomInfoText, bound
+swCustPropMgr.Set "Author", bound
+swCustPropMgr.Add2 "Material", swCustomInfoText, mat()
+swCustPropMgr.Set "Material", mat()
+
+'MsgResponse = MsgBox(bound, vbInformation + vbYesNo)
+
+
+'If MsgResponse = vbYes Then Call DrawBox
+
+
+
+
+'make step file ********************
+Set SelMgr = Part.SelectionManager
+
+Step = swApp.SetUserPreferenceIntegerValue(swStepAP, 214)
+
+sPathName = Part.GetPathName
+sPathName = Left(sPathName, Len(sPathName) - 6)
+sPathName = sPathName + "STEP"
+Part.SaveAs2 sPathName, 0, True, False
+
+'make step file *********************
+
+End Sub
+
+
+
+Function mat()
+    Dim swApp As SldWorks.SldWorks
+    Dim swModel As SldWorks.ModelDoc2
+    Dim swPart As SldWorks.PartDoc
+    Dim sMatName As String
+    Dim sMatDB As String
+    Set swApp = Application.SldWorks
+    Set swModel = swApp.ActiveDoc
+    Set swPart = swModel
+    sMatName = swPart.GetMaterialPropertyName2("Default", sMatDB)
+    Debug.Print "File = " & swModel.GetPathName
+    Debug.Print "  Material = " & sMatName & " (" & sMatDB & ")"
+    Debug.Print Str(Int((100000 * Rnd)))
+    kMat = sMatName
+    mat = sMatName
+End Function
+
+
+
