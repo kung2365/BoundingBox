@@ -288,17 +288,7 @@ swCustPropMgr.Set "Material", mat()
 
 
 
-'make step file ********************
-Set SelMgr = Part.SelectionManager
 
-Step = swApp.SetUserPreferenceIntegerValue(swStepAP, 214)
-
-sPathName = Part.GetPathName
-sPathName = Left(sPathName, Len(sPathName) - 6)
-sPathName = sPathName + "STEP"
-Part.SaveAs2 sPathName, 0, True, False
-
-'make step file *********************
 
 End Sub
 
